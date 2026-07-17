@@ -14,7 +14,8 @@ class Board:
         self._add_pieces('black')
 
     # important method to calculate the valid moves of a piece
-    def calc_moves(self, piece, row, col):
+    def calc_moves(self, piece, row, col, check_filter=True):
+        piece.moves = []  # Clear stale moves before recalculating
         def bishop_moves():
             # Diagonal move generation 
             for i in range(4):
@@ -41,7 +42,6 @@ class Board:
                         if not self._add_move(piece.moves, move_row, move_col, piece):
                             break
             
-            print(piece.moves)
 
         def queen_moves():
             # Horizontal and Vertical Move Generation + Diagonal Generation
@@ -93,7 +93,6 @@ class Board:
                         if not self._add_move(piece.moves, move_row, move_col, piece):
                             break
 
-            print(piece.moves)
 
         def rook_moves():
             # Horizontal and Vertical Move Generation
@@ -121,7 +120,6 @@ class Board:
                         if not self._add_move(piece.moves, move_row, move_col, piece):
                             break
 
-            print(piece.moves)
 
         def king_moves():
             possible_moves = [
@@ -144,7 +142,6 @@ class Board:
                 else:
                     possible_moves[i] = (-1,-1)
             piece.moves = [move for move in possible_moves if move != (-1,-1)]
-            print(piece.moves)
 
         def knight_moves():
             # knight has 8 possible moves when placed in center
@@ -169,7 +166,6 @@ class Board:
                     possible_moves[i] = (-1,-1)
             
             piece.moves = [move for move in possible_moves if move != (-1,-1)]
-            print(piece.moves)
         
         def pawn_moves():
             # For White
@@ -211,7 +207,6 @@ class Board:
                     possible_moves[3] = (-1,-1)
                 
                 piece.moves = [move for move in possible_moves if move != (-1,-1)]
-                print(piece.moves)
             # For Black
             else:
                 possible_moves = [
@@ -250,28 +245,75 @@ class Board:
                     possible_moves[3] = (-1,-1)
 
                 piece.moves = [move for move in possible_moves if move != (-1,-1)]
-                print(piece.moves)   
 
         if isinstance(piece, Pawn):
-            return pawn_moves()
+            pawn_moves()
 
         elif isinstance(piece, Knight):
-            return knight_moves()
+            knight_moves()
 
         elif isinstance(piece, Bishop):
-            return bishop_moves()
+            bishop_moves()
 
         elif isinstance(piece, Rook):
-            return rook_moves()
+            rook_moves()
 
         elif isinstance(piece, Queen):
-            return queen_moves()
+            queen_moves()
 
         elif isinstance(piece, King):
-            return king_moves()
+            king_moves()
 
+        # --- Check filter: remove any move that leaves own king in check ---
+        if check_filter:
+            legal_moves = []
+            for move in piece.moves:
+                move_row, move_col = move
+                # Save board state
+                captured = self.squares[move_row][move_col].piece
+                # Simulate the move
+                self.squares[move_row][move_col].piece = piece
+                self.squares[row][col].piece = None
+                # If king moves, update tracked position temporarily
+                if piece.name == 'king':
+                    if piece.color == 'white':
+                        orig_wr, orig_wc = self.white_king_row, self.white_king_col
+                        self.white_king_row, self.white_king_col = move_row, move_col
+                    else:
+                        orig_br, orig_bc = self.black_king_row, self.black_king_col
+                        self.black_king_row, self.black_king_col = move_row, move_col
+                # Check safety
+                if not self.is_king_in_check(piece.color):
+                    legal_moves.append(move)
+                # Restore board state
+                self.squares[row][col].piece = piece
+                self.squares[move_row][move_col].piece = captured
+                if piece.name == 'king':
+                    if piece.color == 'white':
+                        self.white_king_row, self.white_king_col = orig_wr, orig_wc
+                    else:
+                        self.black_king_row, self.black_king_col = orig_br, orig_bc
+            piece.moves = legal_moves
+
+    def is_king_in_check(self, color):
+        """Returns True if the king of the given color is currently under attack."""
+        # Use cached king position
+        if color == 'white':
+            king_row, king_col = self.white_king_row, self.white_king_col
         else:
-            return []
+            king_row, king_col = self.black_king_row, self.black_king_col
+
+        # Check every enemy piece's pseudo-legal moves (no check_filter to avoid recursion)
+        for r in range(rows):
+            for c in range(columns):
+                if self.squares[r][c].has_piece():
+                    enemy = self.squares[r][c].piece
+                    if enemy.color != color:
+                        self.calc_moves(enemy, r, c, check_filter=False)
+                        for move in enemy.moves:
+                            if move[0] == king_row and move[1] == king_col:
+                                return True
+        return False
 
     def _create(self):
         for row in range(rows):
